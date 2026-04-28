@@ -1,38 +1,152 @@
+# =====================================================
+# Observability Stack - Plug & Play
+# =====================================================
+# LGTM Stack: Loki + Grafana + Tempo + Prometheus
+# OpenTelemetry Collector as the central telemetry gateway
+#
+# Usage:
+#   docker compose up -d
+#   podman-compose up -d
+#
+# All settings are self-contained in this file with sensible defaults.
+# Override via .env (see .env.example) — no .env required to start.
+#
+# Apps point their OTEL exporter to:
+#   - gRPC: http://<host-ip>:4317
+#   - HTTP: http://<host-ip>:4318
+#
+# To attach another compose stack to this network:
+#   networks:
+#     observability-network:
+#       external: true
+# =====================================================
+
+name: observability
+
+networks:
+  obs-net:
+    name: observability-network
+    driver: bridge
+
+volumes:
+  loki_data:
+  tempo_data:
+  prometheus_data:
+  grafana_data:
+
 services:
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./data/prometheus:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-    ports:
-      - "9090:9090"
 
+  # =====================================================
+  # LOKI - Log Aggregation
+  # =====================================================
   loki:
-    image: grafana/loki:latest
-    container_name: loki
+    image: grafana/loki:3.6.4
+    container_name: obs-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yml
     ports:
-      - "3100:3100"
-    command: -config.file=/etc/loki/local-config.yaml
-
-  tempo:
-    image: grafana/tempo:latest
-    container_name: tempo
-    command: [ "-config.file=/etc/tempo.yaml" ]
-    ports:
-      - "3200:3200" # tempo
-      - "4317:4317" # otlp grpc (para suas apps .NET)
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
+      - "${LOKI_PORT:-3100}:3100"
     volumes:
-      - ./data/grafana:/var/lib/grafana
+      - ./observability/loki/config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    # NOTE: Loki image has no wget/curl — healthcheck omitted intentionally
+    networks:
+      - obs-net
+
+  # =====================================================
+  # TEMPO - Distributed Tracing
+  # =====================================================
+  tempo:
+    image: grafana/tempo:2.10.0
+    container_name: obs-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/config.yml"]
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+    volumes:
+      - ./observability/tempo/config.yml:/etc/tempo/config.yml:ro
+      - tempo_data:/var/tempo
+    # NOTE: Tempo image has no wget/curl — healthcheck omitted intentionally
+    networks:
+      - obs-net
+
+  # =====================================================
+  # PROMETHEUS - Metrics
+  # =====================================================
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    container_name: obs-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - obs-net
+
+  # =====================================================
+  # OTEL COLLECTOR - Central Telemetry Gateway
+  # =====================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.144.0
+    container_name: obs-otel-collector
+    restart: unless-stopped
+    ports:
+      - "${OTEL_GRPC_PORT:-4317}:4317"   # OTLP gRPC
+      - "${OTEL_HTTP_PORT:-4318}:4318"   # OTLP HTTP
+      - "8889:8889"                       # Prometheus metrics exporter
+      - "13133:13133"                     # Health check extension
+    volumes:
+      - ./observability/otel-collector/config.yml:/etc/otelcol-contrib/config.yml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yml"]
+    networks:
+      - obs-net
+
+  # =====================================================
+  # GRAFANA - Dashboards & Visualization
+  # =====================================================
+  grafana:
+    image: grafana/grafana:12.3.2
+    container_name: obs-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=rdpresser@123
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://localhost:${GRAFANA_PORT:-3000}"
+      GF_INSTALL_PLUGINS: ""
+      GF_EXPLORE_ENABLED: "true"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
-      - prometheus
-      - loki
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+      tempo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
+    networks:
+      - obs-net

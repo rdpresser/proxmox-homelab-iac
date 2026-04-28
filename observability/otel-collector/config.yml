@@ -1,0 +1,98 @@
+# =====================================================
+# OpenTelemetry Collector Configuration
+# =====================================================
+# Single entry point for traces, metrics, and logs.
+# Apps send telemetry here via OTLP gRPC (:4317) or HTTP (:4318).
+# =====================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  attributes:
+    actions:
+      # Normalize correlation_id from common casing variants
+      - key: correlation_id
+        from_attribute: correlationId
+        action: insert
+      - key: correlation_id
+        from_attribute: CorrelationId
+        action: insert
+
+  resource:
+    attributes:
+      - key: service.name
+        action: upsert
+        from_attribute: service.name
+
+  # Remove scope attributes that cause duplicate label errors in Prometheus
+  # (added by .NET OpenTelemetry instrumentations)
+  attributes/metrics:
+    actions:
+      - key: otel.scope.name
+        action: delete
+      - key: otel.scope.version
+        action: delete
+
+exporters:
+  # Prometheus metrics exporter (scraped by Prometheus on :8889)
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    resource_to_telemetry_conversion:
+      enabled: false
+
+  # Tempo — distributed traces
+  otlp/tempo:
+    endpoint: "tempo:4317"
+    tls:
+      insecure: true
+
+  # Loki — logs via OTLP HTTP (Loki 2.9+)
+  otlphttp/loki:
+    endpoint: "http://loki:3100/otlp"
+    tls:
+      insecure: true
+    headers:
+      X-Scope-OrgID: "1"
+
+  # Debug exporter — comment out in production
+  debug:
+    verbosity: normal
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, attributes]
+      exporters: [otlp/tempo]
+
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/metrics, batch]
+      exporters: [prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, attributes, resource]
+      exporters: [otlphttp/loki]

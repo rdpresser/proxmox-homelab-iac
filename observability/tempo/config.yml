@@ -1,0 +1,67 @@
+# =====================================================
+# Tempo Configuration - Single Instance
+# =====================================================
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9096
+  grpc_server_max_recv_msg_size: 4194304
+  grpc_server_max_send_msg_size: 4194304
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 30s
+  max_block_bytes: 1073741824
+  trace_idle_period: 10s
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+    num_tokens: 128
+    heartbeat_timeout: 5m
+
+compactor:
+  compaction:
+    compaction_window: 1h
+    max_block_bytes: 107374182400
+    block_retention: 1h
+    compacted_block_retention: 10m
+
+querier:
+  max_concurrent_queries: 20
+
+# ==============================
+# METRICS GENERATOR
+# Enables Service Map, Rate queries, and Drilldown in Grafana
+# ==============================
+metrics_generator:
+  ring:
+    kvstore:
+      store: inmemory
+  processor:
+    service_graphs:
+      dimensions: []
+    span_metrics:
+      dimensions: []
+  registry:
+    external_labels:
+      cluster: local
+      environment: local
+  storage:
+    path: /var/tempo/metrics
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/traces
