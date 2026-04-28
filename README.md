@@ -50,7 +50,7 @@ networks:
 ```bash
 # Clone and start
 git clone <repo-url>
-cd observability
+cd <root-folder>
 docker compose up -d        # or: podman-compose up -d
 
 # Open Grafana
@@ -86,7 +86,7 @@ Configurable values:
 
 ### Adding your own services to Prometheus
 
-Edit `observability/prometheus/prometheus.yml` and add a new `scrape_config`:
+Edit `<root-folder>/observability/prometheus/prometheus.yml` and add a new `scrape_config`:
 
 ```yaml
 scrape_configs:
@@ -138,7 +138,7 @@ OTEL_SERVICE_NAME=my-service
 ## Directory Structure
 
 ```
-observability/
+<root-folder>/
 ├── docker-compose.yml                          # Main compose file
 ├── .env.example                                # Optional overrides template
 ├── README.md
