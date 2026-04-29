@@ -40,7 +40,7 @@ services:
   # LOKI - Log Aggregation
   # =====================================================
   loki:
-    image: grafana/loki:3.6.4
+    image: grafana/loki:3.7.1
     container_name: obs-loki
     restart: unless-stopped
     command: -config.file=/etc/loki/config.yml
@@ -57,7 +57,7 @@ services:
   # TEMPO - Distributed Tracing
   # =====================================================
   tempo:
-    image: grafana/tempo:2.10.0
+    image: grafana/tempo:2.10.5
     container_name: obs-tempo
     restart: unless-stopped
     command: ["-config.file=/etc/tempo/config.yml"]
@@ -74,7 +74,7 @@ services:
   # PROMETHEUS - Metrics
   # =====================================================
   prometheus:
-    image: prom/prometheus:v3.9.1
+    image: prom/prometheus:v3.11.3
     container_name: obs-prometheus
     restart: unless-stopped
     ports:
@@ -102,7 +102,7 @@ services:
   # OTEL COLLECTOR - Central Telemetry Gateway
   # =====================================================
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.144.0
+    image: otel/opentelemetry-collector-contrib:0.150.1
     container_name: obs-otel-collector
     restart: unless-stopped
     ports:
@@ -120,7 +120,7 @@ services:
   # GRAFANA - Dashboards & Visualization
   # =====================================================
   grafana:
-    image: grafana/grafana:12.3.2
+    image: grafana/grafana:13.0.1
     container_name: obs-grafana
     restart: unless-stopped
     ports:

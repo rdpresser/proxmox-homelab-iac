@@ -140,8 +140,12 @@ get_github_latest_release() {
 get_current_tag() {
     local image_base="${1}"
     local tag
+    local escaped_base
 
-    tag=$(grep "image:.*${image_base}:" "${COMPOSE_FILE}" | head -1 | sed "s/.*${image_base}://; s/[[:space:]]*$//" || echo "")
+    # Escape special characters for sed
+    escaped_base=$(printf '%s\n' "${image_base}" | sed -e 's/[\/&]/\\&/g')
+
+    tag=$(grep "image:.*${image_base}:" "${COMPOSE_FILE}" | head -1 | sed "s/.*${escaped_base}://; s/[[:space:]]*$//" || echo "")
 
     if [[ -n "${tag}" ]]; then
         echo "${tag}"
@@ -201,8 +205,24 @@ compare_versions() {
 }
 
 # =====================================================
-# Update Functions
+# Version Formatting
 # =====================================================
+
+preserve_version_prefix() {
+    local original="${1}"
+    local new_version="${2}"
+
+    # If original version starts with 'v', add it to new version
+    if [[ "${original}" =~ ^v ]]; then
+        if [[ ! "${new_version}" =~ ^v ]]; then
+            echo "v${new_version}"
+        else
+            echo "${new_version}"
+        fi
+    else
+        echo "${new_version}"
+    fi
+}
 
 update_compose_file() {
     local image_base="${1}"
@@ -359,8 +379,11 @@ if [[ ${UPDATES_AVAILABLE} -eq 1 ]]; then
                 latest="${RESULTS_LATEST[$i]}"
                 image="${RESULTS_IMAGE[$i]}"
 
-                write_step "Updating ${name}: ${current} → ${latest}..."
-                update_compose_file "${image}" "${latest}"
+                # Preserve version prefix (e.g., 'v' in v3.11.3)
+                formatted_latest=$(preserve_version_prefix "${current}" "${latest}")
+
+                write_step "Updating ${name}: ${current} → ${formatted_latest}..."
+                update_compose_file "${image}" "${formatted_latest}"
                 write_success "Updated ${name}"
                 updated_count=$((updated_count + 1))
             fi
